@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!-- QuickReader Settings Popup: A simple UI for toggling rendering modes (fast, careful, off). -->
+<html lang="en">
+<head>
+    <title>QuickReader Settings</title>
+    <style>
+        body {
+            width: 200px;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+        }
+        .mode-toggle {
+            margin-top: 10px;
+        }
+        .mode-toggle label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        #currentMode {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h3>QuickReader Rendering Mode</h3>
+    <div class="mode-toggle" role="radiogroup" aria-label="Rendering Mode Selection">
+        <label><input type="radio" name="mode" value="fast" id="fastMode" checked> Fast (quick, focuses on main content)</label>
+        <label><input type="radio" name="mode" value="careful" id="carefulMode"> Careful (thorough, stable rendering)</label>
+        <label><input type="radio" name="mode" value="off" id="offMode"> Off (disables rendering)</label>
+    </div>
+    <div id="currentMode" role="status" aria-live="polite"></div>
+    <script src="options.js"></script>
+</body>
+</html>

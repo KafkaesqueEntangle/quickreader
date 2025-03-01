@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "QuickReader",
+  "version": "1.0",
+  "description": "Enhances reading speed by bolding the first half of words in web content.",
+  "author": "KafkaesqueEntangle",
+  "homepage_url": "https://github.com/KafkaesqueEntangle/quickreader",
+  "permissions": ["activeTab", "storage"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "options.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
+  }
+}
