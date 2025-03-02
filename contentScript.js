@@ -1,24 +1,14 @@
-// contentScript.js
 /**
  * QuickReader Content Script
- * Enhances web reading speed by bolding the first half of words in visible main content,
+ * Enhances web reading speed by bolding the first or half of words in visible main content,
  * skipping sidebars, overlays, and interactive elements. Uses a two-tiered observer system
- * for performance and supports fast/careful/off rendering modes via Chrome storage.
+ * for performance and supports on/off rendering modes via Chrome storage, with a bolding style setting.
  */
 
-/**
- * Constants defining rendering mode configurations with delays for stability and performance.
- * @type {Object}
- */
-const RENDERING_MODES = {
-  'fast': { LINK_CLICK_DELAY: 250 }, // Quick, focuses on main content
-  'careful': { LINK_CLICK_DELAY: 1000 } // Thorough, targets stable rendering
-};
-
-let renderingMode = 'fast';
-let resetRenderingTimer = null;
-let linkClickDelay = RENDERING_MODES.fast.LINK_CLICK_DELAY; // Default to fast mode
+let renderingMode = 'on'; // Default to 'on' for immediate rendering
+let boldingMode = 'half'; // Default to 'half' for current behavior (bold first half of words)
 let debounceTimer = null; // Global debounce timer for all rendering triggers
+let debounceQueue = []; // Queue to hold elements during debouncing
 
 /**
  * List of HTML elements likely containing main text content for rendering.
@@ -53,22 +43,20 @@ const visibilityObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting) {
       const element = entry.target;
-      // Skip if already rendered by us or within side/interactive content
-      if (!element.querySelector('b[quickreader-rendered="true"]') && 
+      // Skip if already rendered by us, within side/interactive content, or mode is 'off'
+      if (renderingMode === 'on' && !element.querySelector('b[quickreader-rendered="true"]') && 
           !element.closest('b[quickreader-rendered="true"]') && 
           !isSideOrInteractiveContent(element)) {
-        debounceRender('IntersectionObserver', element);
+        debounceRender('intersectionObserver', element);
         visibilityObserver.unobserve(element); // Free it after triggering
       }
     }
   });
 }, { rootMargin: '200px', threshold: 0.1 }); // Preload slightly before visible
 
-let debounceQueue = []; // Queue to hold elements during debouncing
-
 /**
  * Debounces rendering requests to prevent excessive DOM manipulation, improving performance.
- * @param {string} trigger - The event triggering the render (e.g., 'IntersectionObserver', 'DOMContentLoaded').
+ * @param {string} trigger - The event triggering the render (e.g., 'intersectionObserver', 'DOMContentLoaded').
  * @param {Element} [element] - The DOM element to render, if provided.
  */
 function debounceRender(trigger, element) {
@@ -86,38 +74,37 @@ function debounceRender(trigger, element) {
     console.log('Debounce timer expired, starting to render from element', debounceQueue.length > 0 ? debounceQueue[0].element.tagName : 'none');
     while (debounceQueue.length > 0) {
       const { trigger, element } = debounceQueue.shift();
-      if (!element.querySelector('b[quickreader-rendered="true"]') && 
+      if (renderingMode === 'on' && !element.querySelector('b[quickreader-rendered="true"]') && 
           !element.closest('b[quickreader-rendered="true"]') && 
           !isSideOrInteractiveContent(element)) {
         renderElement(element);
       }
     }
     debounceTimer = null;
-  }, linkClickDelay * 2);
+  }, 250); // Fixed delay, using 'fast' mode's 250ms as default
 }
 
 // Listener for messages from the popup
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-  if (request.action === "updateMode") {
-    renderingMode = request.mode;
-    linkClickDelay = RENDERING_MODES[renderingMode].LINK_CLICK_DELAY;
-    console.log(`Rendering mode updated to ${renderingMode} and link click delay to ${linkClickDelay}ms`);
-    if (resetRenderingTimer) clearTimeout(resetRenderingTimer);
+  if (request.action === "updateSettings") {
+    renderingMode = request.renderMode; // 'on' or 'off'
+    boldingMode = request.boldingStyle; // 'start' or 'half'
+    console.log(`Rendering mode updated to ${renderingMode}, Bolding mode updated to ${boldingMode}`);
     initializeRendering();
   }
 });
 
-// Fetch the rendering mode from Chrome storage
-chrome.storage.sync.get('renderMode', function(data) {
-  renderingMode = data.renderMode || 'fast';
-  linkClickDelay = RENDERING_MODES[renderingMode].LINK_CLICK_DELAY;
-  console.log(`Rendering mode set to ${renderingMode} and link click delay to ${linkClickDelay}ms`);
+// Fetch the rendering mode and bolding style from Chrome storage
+chrome.storage.sync.get(['renderMode', 'boldingStyle'], function(data) {
+  renderingMode = data.renderMode || 'on'; // Default to 'on' for immediate rendering
+  boldingMode = data.boldingStyle || 'half'; // Default to 'half' for current behavior (bold first half of words)
+  console.log(`Rendering mode set to ${renderingMode}, Bolding mode set to ${boldingMode}`);
   initializeRendering();
 });
 
 /**
  * Initializes the QuickReader rendering system, setting up observers and event listeners.
- * Only activates if rendering mode is not 'off'. Uses two-tiered observers for performance:
+ * Only activates if rendering mode is 'on'. Uses two-tiered observers for performance:
  * 1. MutationObserver detects new content.
  * 2. IntersectionObserver renders only visible content, reducing unnecessary processing.
  */
@@ -130,7 +117,7 @@ function initializeRendering() {
   document.addEventListener('DOMContentLoaded', () => {
     semanticElements.forEach(tag => {
       document.querySelectorAll(tag).forEach(el => {
-        if (isElementVisible(el) && 
+        if (renderingMode === 'on' && isElementVisible(el) && 
             !el.querySelector('b[quickreader-rendered="true"]') && 
             !el.closest('b[quickreader-rendered="true"]') && 
             !isSideOrInteractiveContent(el)) {
@@ -144,10 +131,10 @@ function initializeRendering() {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         const element = entry.target;
-        if (!element.querySelector('b[quickreader-rendered="true"]') && 
+        if (renderingMode === 'on' && !element.querySelector('b[quickreader-rendered="true"]') && 
             !element.closest('b[quickreader-rendered="true"]') && 
             !isSideOrInteractiveContent(element)) {
-          debounceRender('IntersectionObserver', element);
+          debounceRender('intersectionObserver', element);
         }
       }
     });
@@ -159,28 +146,31 @@ function initializeRendering() {
     });
   });
 
-  const observer = new MutationObserver((mutationsList) => {
-    for (let mutation of mutationsList) {
-      if (mutation.target.closest('iframe') === null && mutation.type === 'childList') {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE && 
-              node.textContent.trim().length > 0 && 
-              !node.querySelector('b[quickreader-rendered="true"]') && 
-              !node.closest('b[quickreader-rendered="true"]') && 
-              !isSideOrInteractiveContent(node)) {
-            visibilityObserver.observe(node);
-          }
-        });
+  if (!observer) {
+    observer = new MutationObserver((mutationsList) => {
+      for (let mutation of mutationsList) {
+        if (mutation.target.closest('iframe') === null && mutation.type === 'childList') {
+          mutation.addedNodes.forEach(node => {
+            if (renderingMode === 'on' && node.nodeType === Node.ELEMENT_NODE && 
+                node.textContent.trim().length > 0 && 
+                !node.querySelector('b[quickreader-rendered="true"]') && 
+                !node.closest('b[quickreader-rendered="true"]') && 
+                !isSideOrInteractiveContent(node)) {
+              visibilityObserver.observe(node);
+            }
+          });
+        }
       }
-    }
-  });
+    });
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: false,
-    characterData: false
-  });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+      characterData: false
+    });
+    console.log('MutationObserver initialized');
+  }
 
   // Helper function to check if an element is visible
   function isElementVisible(el) {
@@ -196,7 +186,7 @@ function initializeRendering() {
 }
 
 /**
- * Renders a single element by bolding the first half of words, skipping Unicode characters and side content.
+ * Renders a single element by bolding the first or half of words, skipping Unicode characters and side content.
  * Uses recursive parsing to process text nodes and their children.
  * @param {Element} element - The DOM element to render.
  */
@@ -204,7 +194,7 @@ function renderElement(element) {
   function processNode(node) {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent || '';
-      if (text.length > 0) {
+      if (text.length > 0 && renderingMode === 'on') {
         // Skip rendering if the node is within side or interactive content
         if (node.parentElement && isSideOrInteractiveContent(node.parentElement)) {
           return;
@@ -228,7 +218,7 @@ function renderElement(element) {
             let words = segment.match(/(\s+|\S+)/g) || [segment]; // Split into words and whitespace
             words.forEach(word => {
               if (word.match(/\S/)) {
-                rendered += renderWord(word); // Render non-whitespace words with bolding
+                rendered += renderWord(word); // Render non-whitespace words with bolding based on mode
               } else {
                 rendered += word; // Preserve whitespace to maintain layout
               }
@@ -251,7 +241,7 @@ function renderElement(element) {
     }
   }
 
-  if (!element.querySelector('b[quickreader-rendered="true"]') && 
+  if (renderingMode === 'on' && !element.querySelector('b[quickreader-rendered="true"]') && 
       !element.closest('b[quickreader-rendered="true"]') && 
       !isSideOrInteractiveContent(element)) {
     processNode(element);
@@ -259,25 +249,41 @@ function renderElement(element) {
 }
 
 /**
- * Bolds the first half of a word, skipping empty or non-string inputs.
+ * Bolds the first or half of a word based on the bolding mode, skipping empty or <3-character inputs.
  * Handles edge cases like odd/even lengths, Unicode characters (handled by parent), and potential errors.
  * @param {string} text - The word or text segment to render.
- * @returns {string} HTML string with the first half bolded, or original text if invalid.
+ * @returns {string} HTML string with the appropriate portion bolded, or original text if invalid or short.
  */
 function renderWord(text) {
   if (!text || typeof text !== 'string') return text || '';
   text = text.trim();
+  if (text.length < 2) return text; // Skip too short words
   if (text.length === 0) return text;
-  let middleIndex = Math.floor(text.length / 2);
   try {
-    if (text.length % 2 === 0) {
-      return `<b>${text.substring(0, middleIndex)}</b>${text.substring(middleIndex)}`;
+    if (boldingMode === 'start') {
+      // There are no firm study results of optimal share of words to bold to provide best fixation. TBD.
+      let boldLength = Math.min(7, Math.max(1, Math.round(text.length * 0.3))); // At least 1, max 7, avg. 30%
+      return `<b>${text.substring(0, boldLength)}</b>${text.substring(boldLength)}`;
+    } else if (boldingMode === 'half') {
+      // Bold the first half of the word (current behavior, unchanged)
+      let middleIndex = Math.floor(text.length / 2);
+      if (text.length % 2 === 0) {
+        return `<b>${text.substring(0, middleIndex)}</b>${text.substring(middleIndex)}`;
+      } else {
+        return `<b>${text.substring(0, middleIndex + 1)}</b>${text.substring(middleIndex + 1)}`;
+      }
     } else {
-      return `<b>${text.substring(0, middleIndex + 1)}</b>${text.substring(middleIndex + 1)}`;
+      console.warn('Unexpected bolding mode:', boldingMode);
+      // Default to half word if mode is invalid
+      let middleIndex = Math.floor(text.length / 2);
+      if (text.length % 2 === 0) {
+        return `<b>${text.substring(0, middleIndex)}</b>${text.substring(middleIndex)}`;
+      } else {
+        return `<b>${text.substring(0, middleIndex + 1)}</b>${text.substring(middleIndex + 1)}`;
+      }
     }
   } catch (e) {
     console.error('Error rendering word:', text, e);
     return text || '';
   }
 }
-

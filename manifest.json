@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "QuickReader",
   "version": "1.0",
-  "description": "Enhances reading speed by bolding the first half of words in web content.",
+  "description": "Enhances reading speed by bolding the first half of words in web content when enabled.",
   "author": "KafkaesqueEntangle",
   "homepage_url": "https://github.com/KafkaesqueEntangle/quickreader",
   "permissions": ["activeTab", "storage"],
